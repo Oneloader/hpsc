@@ -1,0 +1,101 @@
+<?php
+/**
+ * Created by PhpStorm.
+ * User: Administrator
+ * Date: 15-3-26
+ * Time: 上午10:43
+ * @author:xjw129xjt(肖骏涛) xjt@ourstu.com
+ */
+
+
+/**
+ * send_weibo  发布动态
+ * @param $content
+ * @param $type
+ * @param string $feed_data
+ * @param string $from
+ * @return bool
+ * @author:xjw129xjt(肖骏涛) xjt@ourstu.com
+ */
+function send_wb($title,$content, $type, $feed_data = '', $from = '')
+{
+    $topicModel=D('Weibo/Topic');
+    $topicFollowModel=D('Weibo/TopicFollow');
+    $uid = is_login();
+    $weiboTopicLink = $topicModel->addTopic($content);
+    $weibo_id = D('Weibo/Weibo')->addWeibo($uid, $title, $content, $type, $feed_data, $from);
+    if (!$weibo_id) {
+        return false;
+    }
+    if (count($weiboTopicLink)) {
+        foreach ($weiboTopicLink as &$val) {
+            $val['weibo_id'] = $weibo_id;
+        }
+        unset($val);
+        D('Weibo/WeiboTopicLink')->addDatas($weiboTopicLink);
+
+        //关注话题的用户接收到话题更新通知
+        $k=0;
+        foreach ($weiboTopicLink as $topk){
+            $topks[$k]['topk']=$topicModel->getTopicInfo($topk['topic_id']);
+            $topks[$k]['uid']=$topicFollowModel->getTopicFollow($topk['topic_id']);
+            $k++;
+        }
+        unset($k);
+
+        foreach ($topks as $vo)
+        { 
+            if(!empty($vo['uid'])){
+                //排除自己
+                if(in_array($uid,$vo['uid'])){
+                    $key=array_search($uid,$vo['uid']);
+                    unset($vo['uid'][$key]);
+                }
+                // 未读过该话题的用户不再提醒
+                $readUids=D('Message')->topicMessageRead($vo['topk']['name'],$vo['uid']);
+                D('Message')->sendALotOfMessageWithoutCheckSelf($readUids,'话题通知','您关注的#'.$vo['topk']['name'].'#话题已更新。','Weibo/Topic/index',array('topk'=>$vo['topk']['id']),1,'Weibo');
+            }
+        }
+
+    }
+
+    action_log('add_weibo', 'weibo', $weibo_id, $uid);
+    $uids = get_at_uids($content);
+    if ($type == 'repost') {
+        $message_at_content = array(
+            'keyword1' => parse_content_for_message($content),
+            'keyword2' => '发布动态时@了你：',
+            'keyword3' => "转发动态"
+        );
+    } else {
+        $message_at_content = array(
+            'keyword1' => '发布动态时@了你：',
+            'keyword2' => '',
+            'keyword3' => parse_content_for_message($content)
+        );
+    }
+    D('Pushing')->sendMsg('all', array('uid'=>$uid,'weibo_id'=>$weibo_id),'send_weibo');
+    send_at_message($uids, $weibo_id, $message_at_content);
+    clean_query_user_cache(is_login(), array('weibocount'));
+    return $weibo_id;
+
+}
+
+//  彻底清除所有html标签及特殊符号
+function cutstr_html($string,$sublen=99999999999)
+{
+    $string = htmlspecialchars_decode($string);
+    $string = strip_tags($string);
+    $string = preg_replace ('/\n/is', '', $string);
+    $string = preg_replace ('/ |　/is', '', $string);
+    $string = preg_replace ('/&nbsp;/is', '', $string);
+    $qian=array(" ","　","\t","\n","\r","\r\n");
+    $hou=array("","","","","","");
+    $string = str_replace($qian,$hou,$string);
+    $string = preg_replace('/[\x{10000}-\x{10FFFF}]/u', '', $string);
+    preg_match_all("/[\x01-\x7f]|[\xc2-\xdf][\x80-\xbf]|\xe0[\xa0-\xbf][\x80-\xbf]|[\xe1-\xef][\x80-\xbf][\x80-\xbf]|\xf0[\x90-\xbf][\x80-\xbf][\x80-\xbf]|[\xf1-\xf7][\x80-\xbf][\x80-\xbf][\x80-\xbf]/", $string, $t_string);
+    if(count($t_string[0]) - 0 > $sublen) $string = join('', array_slice($t_string[0], 0, $sublen))."......";
+    else $string = join('', array_slice($t_string[0], 0, $sublen));
+
+    return $string;
+}

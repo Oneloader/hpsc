@@ -1,0 +1,1369 @@
+<?php
+/**
+ * 小程序接口文件
+ */
+namespace Wiki\Controller;
+use Admin\Builder\AdminListBuilder;
+use Admin\Model\DocumentModel;
+use Api\Controller\MessageController;
+use Common\Model\AdvModel;
+use Common\Model\MemberModel;
+use Common\Model\NavModel;
+use Couchbase\Document;
+use Home\Controller\IndexController;
+use Think\Cache\Driver\Redis;
+use Think\Controller;
+use Ucenter\Controller\ConfigController;
+use Weibo\Model\TopicModel;
+use Weibo\Model\WeiboCommentModel;
+use Weibo\Model\WeiboModel;
+
+
+class ApiController extends BaseController
+{
+    /**
+      *登录（调用wx.login获取）
+      * @param $code string
+      * @param $rawData string
+      * @param $signatrue string
+      * @param $encryptedData string
+      * @param $iv string
+      * @return $code 成功码
+      * @return $session3rd 第三方3rd_session
+      * @return $data 用户数据
+     */
+
+    public function wx_login()
+    {
+        include_once "wxBizDataCrypt.php";
+        //开发者使用登陆凭证 code 获取 session_key 和 openid
+        $APPID = 'wxa6edd390d0659206';//自己配置
+        $AppSecret = '6eb5274bf3f130f5b7b3809e434bd2c2';//自己配置
+        $code = I('code');
+        $url = "https://api.weixin.qq.com/sns/jscode2session?appid=".$APPID."&secret=".$AppSecret."&js_code=".$code."&grant_type=authorization_code";
+        $arr = $this->vget($url); // 一个使用curl实现的get方法请求
+        $arr = json_decode($arr, true);
+        $openid = $arr['openid'];
+        $session_key = $arr['session_key'];
+        // 数据签名校验
+        $signature = I('signature');
+        $rawData = I('post.rawData');
+        $signature2 = sha1($rawData . $session_key);
+        if ($signature != $signature2) {
+            exit(['code' => 500, 'msg' => '数据签名验证失败！']);
+        }
+        Vendor("PHP.wxBizDataCrypt"); //加载解密文件，在官方有下载
+        $encryptedData = I('encryptedData');
+        $iv = I('iv');
+        $pc = new \WXBizDataCrypt($APPID, $session_key);
+        $errCode = $pc->decryptData($encryptedData, $iv, $data); //其中$data包含用户的所有数据
+        $data = json_decode($data,true);
+        if ($errCode == 0) {
+            $result = $this->login($data);
+            successReturn($result);//打印解密所得的用户信息
+        } else {
+            successReturn($errCode);//打印失败信息
+        }
+    }
+
+    public function vget($url){
+        $info=curl_init();
+        curl_setopt($info,CURLOPT_RETURNTRANSFER,true);
+        curl_setopt($info,CURLOPT_HEADER,0);
+        curl_setopt($info,CURLOPT_NOBODY,0);
+        curl_setopt($info,CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($info,CURLOPT_SSL_VERIFYHOST, false);
+        curl_setopt($info,CURLOPT_URL,$url);
+        $output= curl_exec($info);
+        curl_close($info);
+        return $output;
+    }
+
+    public function login($data = array()){
+        $openid = $data['openId'];
+        $nickname = cutstr_html($data['nickName']);
+        if (empty($openid)){
+            return array('status'=>-1,'msg'=>'参数有误','result'=>'');
+        }
+        if (isset($data['openId'])){
+            $where['openid'] = $data['openId'];
+            $user = D('member')->where($where)->find();
+        }
+        if (empty($user)){
+            $map['openid'] = $openid;
+            $map['nickname'] = $nickname;
+            $map['reg_time'] = time();
+            $map['sex'] = empty($data['gender']) ? 0 : $data['gender'];
+            $map['token'] = md5(time().mt_rand(1,99999));
+            $member_name = D('member')
+                ->where(['nickname'=>$nickname])
+                ->select();
+            if(empty($member_name)){
+                $member_id = M('member')->add($map);
+                if (isset($data['avatarUrl'])){
+                    /*   保存用户头像   */
+                    $avatar['uid'] = $member_id;
+                    $avatar['path'] = $data['avatarUrl'];
+                    $avatar['create_time'] = time();
+                    $avatar['status'] = 1;
+                    M('avatar')->add($avatar);
+                }
+                $avatar_url = D('avatar')
+                    ->field('path')
+                    ->where(['uid'=>$member_id])
+                    ->find();
+                $background_img = D('background')
+                    ->field('path')
+                    ->where(['uid'=>$member_id])
+                    ->find();
+                $member = D('member')
+//                    ->alias('m')
+                    ->field('uid,nickname,sex,signature,token,openid,reg_time')
+//                    ->join('ot_avatar as a ON m.uid=a.uid')
+//                    ->join('ot_background as b ON m.uid=b.uid')
+                    ->where(['uid'=>$member_id])
+                    ->find();
+                $member['reg_time'] = date('Y-m-d',$member['reg_time']);
+                $member['avatar'] = $avatar_url['path'];
+                $member['background_img'] = $background_img['path'];
+                if ($openid == $member['openid']){
+                    session('id',$member_id);
+                    session('nickname',$member['nickname']);
+                }
+            }else{
+                return array('status'=>0,'msg'=>'昵称已存在');
+            }
+        }else{
+            $user['token'] = md5(time().mt_rand(1,999999999));
+            M('member')->where("uid", $user['uid'])->save(array('token'=>$user['token'],'last_login_time'=>time()));
+            $avatar_url = D('avatar')
+                ->field('path')
+                ->where(['uid'=>$user['uid']])
+                ->find();
+            $background_img = D('background')
+                ->field('background_img')
+                ->where(['uid'=>$user['uid']])
+                ->find();
+            $member = D('member')
+                ->field('uid,nickname,sex,signature,token,openid,reg_time')
+                ->where(['uid'=>$user['uid']])
+                ->find();
+            $member['reg_time'] = date('Y-m-d',$member['reg_time']);
+            $member['avatar'] = $avatar_url['path'];
+            $member['background_img'] = $background_img['background_img'];
+        }
+        session('openid',$member['openid']);
+        return array('status'=>1,'msg'=>'登陆成功','result'=>$member);
+    }
+
+
+    /**
+     * 上传图片
+     */
+    public function upload_picture(){
+        //TODO: 用户登录检测
+
+        /* 返回标准数据 */
+        $return  = array('status' => 1, 'info' => L('_UPLOAD_SUCCESS_'), 'data' => '');
+
+        /* 调用文件上传组件上传文件 */
+        $Picture = D('Picture');
+
+        $driver = modC('PICTURE_UPLOAD_DRIVER','local','config');
+        $driver = check_driver_is_exist($driver);
+        $uploadConfig = get_upload_config($driver);
+
+        $info = $Picture->upload(
+            $_FILES,
+            C('PICTURE_UPLOAD'),
+            $driver,
+            $uploadConfig
+        ); //TODO:上传到远程服务器
+        /* 记录图片信息 */
+        if($info){
+            $return['status'] = 1;
+            empty($info['download']) && $info['download']= $info['file'];
+            $return = array_merge($info['download'], $return);
+        } else {
+            $return['status'] = 0;
+            $return['info']   = $Picture->getError();
+        }
+
+        /* 返回JSON数据 */
+        $this->ajaxReturn($return);
+    }
+
+
+    /**
+     * 获取顶部nav
+     * @return array
+     */
+    public function get_top_nav(){
+        if(checkGet()){
+            $navModel = new \Wiki\Model\NavModel();
+            $top_navs = $navModel->get_top_navs();
+            successReturn($top_navs);
+        }
+    }
+
+    /**
+     * 获取轮播图
+     */
+    public function get_banner(){
+        if(checkPost()){
+            $pos = I('pos',0,'intval');
+            if(!$pos){
+                successReturn([]);
+            }
+
+            //获取轮播图
+            $advModel = new AdvModel();
+            $advs = $advModel->getAdvListByPos($pos);
+            successReturn($advs);
+        }
+    }
+
+    /**
+     * 获取首页热门推荐
+     */
+    public function get_index_hot_weibo(){
+        if(checkGet()){
+            $weiboHot = D('weibo')
+                ->field('id,uid,title,content,category,create_time,type,images')
+                ->where(['status'=>1])
+                ->limit(3)
+                ->order(['comment_count'=>'desc'])
+                ->select();
+            foreach ($weiboHot as $weibo=>$hot){
+                $user_info = $this->user_info($hot['uid']);
+                $cate = explode(',',$hot['category']);
+                $cate_info = $this->get_category($cate);
+                $re = $this->data_img($hot['images']);
+                $weiboHot_list[$weibo]['id'] = $hot['id'];
+                $weiboHot_list[$weibo]['uid'] = $hot['uid'];
+                $weiboHot_list[$weibo]['title'] = $hot['title'];
+                $weiboHot_list[$weibo]['content'] = $hot['content'];
+                $weiboHot_list[$weibo]['create_time'] = date('Y-m-d H:i',$hot['create_time']);
+                $weiboHot_list[$weibo]['user_info'] = $user_info;
+                $weiboHot_list[$weibo]['cate_info'] = $cate_info;
+                $weiboHot_list[$weibo]['img_list'] = $re;
+            }
+            successReturn($weiboHot_list);
+        }
+    }
+
+    /**
+     *  根据用户id获取用户信息
+    */
+    public function user_info($id){
+        $user_info = D('member')
+            ->field('uid,nickname')
+            ->where(['uid'=>$id])
+            ->find();
+        $img = D('avatar')
+            ->field('path')
+            ->where(['uid'=>$id])
+            ->find();
+        $user_info['path'] = $img['path'];
+//        if (!empty($user_info['path'])){
+////            $user_info['path'] = c('WEBSITE')."/Uploads/Avatar".$user_info['path'];
+//            $user_info['path'] = $user_info['path'];
+//        }else{
+//            $user_info['path'] = null;
+//        }
+        return $user_info;
+    }
+
+    /**
+     * 根据微博分类id获取分类信息
+     */
+    public function get_category($cate_id){
+        $cate_info = [];
+        foreach ($cate_id as $key=>$val){
+            $cate_info[$key] = D('weibo_topic')
+                ->field('id,name')
+                ->where(['id'=>$val])
+                ->find();
+        }
+        return $cate_info;
+    }
+
+    /**
+     * 图片数组
+    */
+    public function data_img($data){
+        $images = explode(',',$data);
+        foreach ($images as $key=>$val){
+                $img = D('picture')
+                    ->field('path')
+                    ->where(['id'=>$val])
+                    ->find();
+                if (!empty($img['path'])){
+                    $images[$key] = c('WEBSITE').$img['path'];
+                }
+        }
+        return $images;
+    }
+
+
+    /**
+     * 获取最新微博列表
+     */
+    public function get_newest_weibo(){
+        if(checkPost()){
+            $page = I('p',1,'intval'); //分页
+            $params = [
+                'field' => ['id,uid,title,content,category,create_time,comment_count,likes_count,repost_count,status,images'],
+                'where' => ['status'=>1],
+                'order' => ['create_time'=>'desc'],   //最新
+                'page' => $page,
+            ];
+            $list = $this->get_weibo_list($params);
+//            var_dump($list);exit;
+            foreach ($list as $key=>$val){
+                $cate = explode(',',$val['category']);
+                $cate_info = $this->get_category($cate);
+                $user_info = $this->user_info($val['uid']);
+//                $img = unserialize($val['data']);
+//                var_dump($val['data']);exit;
+                $img_path = $this->data_img($val['images']);
+//                var_dump($img_path);exit;
+                $weibo_list[$key]['uid'] = $val['uid'];
+                $weibo_list[$key]['title'] = $val['title'];
+                $weibo_list[$key]['content'] = $val['content'];
+                $weibo_list[$key]['create_time'] = date('Y-m-d H:i',$val['create_time']);
+                $weibo_list[$key]['comment_count'] = $val['comment_count'];
+                $weibo_list[$key]['likes_count'] = $val['likes_count'];
+                $weibo_list[$key]['repost_count'] = $val['repost_count'];
+                $weibo_list[$key]['user'] = $user_info;
+                $weibo_list[$key]['cate_info'] = $cate_info;
+                $weibo_list[$key]['img_list'] = $img_path;
+            }
+
+//            var_dump($weibo_list);exit;
+            successReturn($weibo_list);
+        }
+    }
+
+    /**
+     * 获取微博详情
+     */
+    public function get_weibo_info(){
+        if(checkGet()){
+            $id = I('get.id',0,'intval');
+            $model = new WeiboModel();
+            $info = $model->getWeiboDetail($id);
+            successReturn($info);
+        }
+    }
+
+    /**
+     * 获取微博评论列表
+     */
+    public function get_weibo_comments(){
+        if(checkPost()){
+            $weibo_id = I('post.weibo_id',1,'intval');
+            $model = new WeiboCommentModel();
+            $list = $model->getCommentList($weibo_id);
+            successReturn($list);
+        }
+    }
+
+    /**
+     * 评论
+     */
+    public function do_comments(){
+        if (checkPost()){
+            $uid = I('post.user_id',1,'intval');
+            $weibo_id = I('post.weibo_id',1,'intval');
+            $content = I('post.content',1,'string');
+            $commentModel = new WeiboCommentModel();
+            $re['comment_id'] = $commentModel->addComment($uid,$weibo_id,$content);
+            successReturn($re);
+        }
+    }
+
+    /**
+     * 转发微博信息
+    */
+    public function repost_info(){
+        if (checkGet()){
+            $aSourceId = I('get.source_id', 0, 'intval');
+            $aWeiboId = I('get.weibo_id', 0, 'intval');
+
+            $weiboModel = new WeiboModel();
+            $result = $weiboModel->getWeiboDetail($aSourceId);
+
+            $this->assign('sourceWeibo', $result);
+            $weiboContent = '';
+            if ($aSourceId != $aWeiboId) {
+                $weibo1 = $weiboModel->getWeiboDetail($aWeiboId);
+                $weiboContent = '//@' . $weibo1['user']['nickname'] . ' ：' . $weibo1['content'];
+            }
+            $info['weiboId'] = $aWeiboId;
+            $info['weiboContent'] = $weiboContent;
+            $info['sourceId'] = $aSourceId;
+            successReturn($info);
+        }
+    }
+
+    /**
+     * 转发微博
+    */
+    public function do_repost(){
+        if(checkPost()){
+            $this->checkIsLogin();
+            $aContent = I('post.content', '', 'op_t');
+            $aType = I('post.type', '', 'op_t');
+            $aSourceId = I('post.source_id', 0, 'intval');
+            $aWeiboId = I('post.weibo_id', 0, 'intval');
+            $aBeComment = I('post.becomment', 'false', 'op_t');
+
+            $this->checkAuth(null, -1, L('_INFO_AUTHORITY_TRANSMIT_LACK_'));
+
+            $return = check_action_limit('add_weibo', 'Weibo/Weibo', 0, is_login(), true);
+            if ($return && !$return['state']) {
+                $this->error($return['info']);
+            }
+
+            if (empty($aContent)) {
+                $this->error(L('_ERROR_CONTENT_CANNOT_EMPTY_'));
+            }
+
+            $weiboModel = new WeiboModel();
+            $feed_data = '';
+            $source = $weiboModel->getWeiboDetail($aSourceId);
+            $sourceweibo = $source['weibo'];
+            $feed_data['source'] = $sourceweibo;
+            $feed_data['sourceId'] = $aSourceId;
+            //发布微博
+            $new_id = send_weibo($aContent, $aType, $feed_data);
+
+            if ($new_id) {
+                $weiboModel->where('id=' . $aSourceId)->setInc('repost_count');
+                $aWeiboId != $aSourceId && $weiboModel->where('id=' . $aWeiboId)->setInc('repost_count');
+                S('weibo_' . $aWeiboId, null);
+                S('weibo_' . $aSourceId, null);
+                //清除html缓存
+                clean_weibo_html_cache($aSourceId);
+                //清除html缓存
+                clean_weibo_html_cache($aWeiboId);
+            }
+            // 发送消息
+            $toUid = $weiboModel->where(array('id' => $aWeiboId))->getField('uid');
+
+            $message_content = array(
+                'keyword1' => parse_content_for_message($aContent),
+                'keyword2' => '转发了你的微博：',
+                'keyword3' => $source['type'] == 'repost' ? "转发微博" : parse_content_for_message($source['content'])
+            );
+            send_message($toUid, L('_PROMPT_TRANSMIT_'), $message_content, 'Weibo/Index/weiboDetail', array('id' => $new_id), is_login(), 'Weibo', 'Common_comment');
+
+            // 发布评论
+            //  dump($aBeComment);exit;
+            if ($aBeComment == 'true') {
+                send_comment($aWeiboId, $aContent);
+            }
+
+            $result['html'] = R('WeiboDetail/weibo_html', array('weibo_id' => $new_id), 'Widget');
+            //返回成功结果
+            $result['status'] = 1;
+            $result['info'] = '转发成功！';
+            successReturn($result);
+        }
+    }
+
+    /**
+     * 获取粉丝列表
+     */
+    public function get_fans(){
+        if (checkGet()){
+            $uid = I('get.user_id',1,'intval');
+            $fans = D('Follow')->getFans($uid, $page, array('avatar128', 'uid', 'nickname', 'fans', 'following', 'weibocount', 'space_url', 'title', 'signature'), $totalCount);
+            successReturn($fans);
+        }
+    }
+
+    /**
+     * 获取分类标签
+     */
+    public function get_cat_tags(){
+        if (checkGet()){
+            $map = [['status'=>1]];
+            $topicModel = new TopicModel();
+            $topicList = $topicModel->getTopicByMap($map);
+            if ($topicList){
+                successReturn($topicList);
+            }else{
+                errorReturn('暂时没有分类标签');
+            }
+        }
+    }
+
+    /**
+     * 发表微博
+     * @return array
+     */
+    public function save_weibo(){
+        if (checkPost()){
+//            $uid = I('post.user_id',1,'intval');
+//            $content = I('post.content',1,'string');
+//            $attach_ids = I('post.attach_ids', '', 'op_t');
+//            $weibo_model = new WeiboModel();
+//            $re['weibo_id'] = $weibo_model->addWeibo($uid,$content,$attach_ids);
+            $aTitle = I('post.title', '', 'string');
+            $aContent = I('post.content', '', 'htmlspecialchars,op_t');
+            $aType = I('post.type', 'feed', 'op_t');
+            $aAttachIds = I('post.attach_ids', '', 'op_t');
+            $aExtra = I('post.extra', array(), 'convert_url_query');
+
+            $types = array('repost', 'feed', 'image', 'share');
+            if (!in_array($aType, $types)) {
+                $class_str = 'Addons\\Insert' . ucfirst($aType) . '\\Insert' . ucfirst($aType) . 'Addon';
+                $class_exists = class_exists($class_str);
+                if (!$class_exists) {
+                    $this->error(L('_ERROR_CANNOT_SEND_THIS_'));
+                } else {
+                    $class = new $class_str();
+                    if (method_exists($class, 'parseExtra')) {
+                        $res = $class->parseExtra($aExtra);
+                        if (!$res) {
+                            $this->error($class->error);
+                        }
+                    }
+                }
+            }
+            //权限判断
+//            $this->checkIsLogin();
+//            $this->checkAuth(null, -1, L('_INFO_AUTHORITY_LACK_'));
+//            $return = check_action_limit('add_weibo', 'weibo', 0, is_login(), true);
+//            if ($return && !$return['state']) {
+//                $this->error($return['info']);
+//            }
+//
+            $feed_data = array();
+            if (!empty($aAttachIds)) {
+                $feed_data['attach_ids'] = $aAttachIds;
+            } else {
+                if ($aType == 'image') {
+                    $this->error(L('_ERROR_AT_LEAST_ONE_'));
+                }
+            }
+
+            if (!empty($aExtra)) $feed_data = array_merge($feed_data, $aExtra);
+
+            // 执行发布，写入数据库
+            $weibo_id = send_wb($aTitle,$aContent, $aType, $feed_data);
+            if (!$weibo_id) {
+                $this->error(L('_FAIL_PUBLISH_'));
+            }
+//            $result['html'] = R('WeiboDetail/weibo_html', array('weibo_id' => $weibo_id), 'Widget');
+
+            $result['status'] = 1;
+            $result['msg'] = 'success';
+            $result['data'] = [L('_SUCCESS_PUBLISH_') . L('_EXCLAMATION_')];
+//            var_dump($result);exit;
+            successReturn($result);
+        }
+    }
+
+    /**
+     * 搜索微博及用户
+     */
+    public function search(){
+        if (checkPost()){
+            $aKeywords = $this->parseSearchKey('keywords');
+            $aKeywords = text($aKeywords);
+            $list['weibo'] = $this->search_weibo($aKeywords);
+            $list['user_id'] = $this->search_user($aKeywords);
+            successReturn($list);
+        }
+    }
+
+    private function search_weibo($aKeywords){
+//         $aPage = I('get.page', 1, 'intval');
+//        $string = "a:1:{s:10:\"attach_ids\";s:7:\"5,6,7,8\";}";
+//        $img['attach_ids'] = '1,4,1,15,123,5';
+//        var_dump(serialize($img));exit;
+//        $r = 30;
+        $param['where']['content'] = array('like', "%{$aKeywords}%");
+        $param['where']['status'] = 1;
+        $param['order'] = 'create_time desc';
+//            $param['page'] = $aPage;
+        $param['count'] = $r;
+        //查询
+        $weiboModel = new WeiboModel();
+        $list = $weiboModel->getWeiboList($param);
+        foreach ($list as $key=>$val){
+            $weibo[] = D('weibo')
+                ->field('id,uid,title,content,category,create_time,type,data')
+                ->where(['id'=>$val])
+                ->find();
+            $list[$key] = [
+                'id'=>$weibo[$key]['id'],
+                'uid'=>$weibo[$key]['uid'],
+                'title'=>$weibo[$key]['title'],
+                'content'=>$weibo[$key]['content'],
+                'create_time'=>date('Y-m-d',$weibo[$key]['create_time']),
+            ];
+//        var_dump($weibo);exit;
+            foreach ($weibo as $k=>$v){
+                $img  = explode(',',$v['data']);
+                foreach ($img as $images=>$image){
+                    $weibo_img = D('picture')
+                        ->field('path')
+                        ->where(['id'=>$image])
+                        ->find();
+                    $list[$key]['img_path'][] = "http://www.demo.com".$weibo_img['path'];
+//                    var_dump($weibo_img['path']);exit;
+                }
+                $topic  = explode(',',$v['category']);
+                foreach ($topic as $top=>$to){
+                    $topices = D('weibo_topic')
+                        ->field('id,name')
+                        ->where(['id'=>$to])
+                        ->find();
+                    $list[$key]['cate_info'][] = $topices;
+                }
+            }
+        }
+        if ($list){
+            return $list;
+        }else{
+            return null;
+        }
+    }
+
+    private function search_user($aKeywords){
+        //         $aPage = I('get.page', 1, 'intval');
+        $r = 30;
+        $param['nickname'] = array('like', "%{$aKeywords}%");
+        $param['status'] = 1;
+        $param['order'] = 'create_time desc';
+//            $param['page'] = $aPage;
+        $param['count'] = $r;
+        //查询
+        $list = D('member')
+            ->where($param)
+            ->select();
+        $list = getSubByKey($list, 'uid');
+        if ($list){
+            return $list;
+        }else{
+            return null;
+        }
+    }
+
+    /**
+     * 获取通知
+     */
+    public function notices(){
+        if (checkGet()){
+            $uid = I('get.user_id','','int');
+            $type = I('get.type','','int');
+//            $uid = 1;
+//            $message_sessions = get_all_message_session();
+//            foreach($message_sessions as &$val){
+//                if($val['block_tpl']){
+//                    $val['block_tpl']=APP_PATH.$val['module'].'/.../'.$val['block_tpl'].'.html';
+//                }else{
+//                    $val['block_tpl']=APP_PATH.'Common/.../_message_block.html';
+//                }
+//                if($val['default']){
+//                    $val['name']=$val['name'].'【默认】';
+//                }
+//            }
+//            unset($val);
+//            $builder=new AdminListBuilder();
+//            $builder->title('会话类型列表')
+//                ->suggest('这里只能查看和刷新，要对会话做增删改，请修改对应文件')
+//                ->ajaxButton(U('Message/sessionRefresh'),null,'刷新',array('hide-data' => 'true'))
+//                ->keyText('name','标识（发送消息时的$type参数值）')
+//                ->keyTitle()
+//                ->keyText('alias','所属模块')
+//                ->keyImage('logo','会话图标')
+//                ->keyText('sort','排序值')
+//                ->keyText('block_tpl','列表样式模板(“...”表示“View/default/MessageTpl/block”)')
+//                ->data($message_sessions)
+//                ->display();
+//            var_dump($message_sessions);exit;
+//            var_dump(is_login());exit;
+            /*-------$type 1为官方公告 2为互动消息---------*/
+            if ($type == "1"){
+                $where['create_time'] = ['lt',time()];
+                $where['end_time'] = ['lt',time()];
+                $where['status'] = ['eq',1];
+                $message = D('announce')
+                    ->where($where)
+                    ->select();
+                successReturn($message);
+            }elseif ($type == "2"){
+                $message = D('message')
+                    ->field('content_id')
+                    ->where(array('to_uid'=>$uid,'status'=>1))
+                    ->select();
+                foreach ($message as $key=>$val){
+                    $message_content = D('message_content')
+//                        ->field('id,title,content,url,create_time')
+                        ->where(array('id'=>$val['content_id'],'status'=>1))
+                        ->find();
+                    $msg[] = $message_content;
+                }
+                successReturn($msg);
+            }else{
+                return null;
+            }
+        }
+    }
+
+    /**
+     * 个人中心
+     */
+    public function user_center(){
+        if (checkGet()){
+            $uid = I('get.user_id',1,'intval');
+            $list['my_info'] = D('member')
+                ->where(['uid'=>$uid])
+                ->select();
+            $params = [
+                'where' => ['uid'=>$uid,'status'=>1],
+                'order' => ['id'=>'desc'],   //最新
+                'page' => $page,
+            ];
+            $list['weibo'] = $this->get_weibo_list($params);
+            $list['weibo_count'] = count($list['weibo']);
+            $list['follow_count'] = D('follow')
+                    ->where(array('who_follow'=>$uid))
+                    ->count();
+//                $list['follow_count'] = count($follow);
+            $list['fans_count'] = D('follow')
+                    ->where(array('follow_who'=>$uid))
+                    ->count();
+//                $list['fans_count'] = count($fans);
+            $list['support_count'] = D('support')
+                    ->where(array('uid'=>$uid))
+                    ->count();
+            successReturn($list);exit;
+        }
+    }
+
+    /**
+     * 我的关注
+    */
+    public function user_follow(){
+        if (checkGet()){
+            $uid = I('get.user_id',1,'intval');
+            $type = I('get.type',1,'string');
+            $my_follow = D('follow')
+                ->field('follow_who')
+                ->where(array('who_follow'=>$uid))
+                ->select();
+            if ($type == "weibo"){
+//                根据当前用户id找到其下关注用户的所有微博
+//                var_dump($my_follow);exit;
+                foreach ($my_follow as $key=>$val){
+                    $follow_who[] = $val["follow_who"];
+                }
+                $fol = implode(',', $follow_who);
+                $where['uid'] = array('in',$fol);
+                $list = D('weibo')
+                    ->where($where)
+                    ->order('create_time desc')
+                    ->select();
+            }elseif($type == "user"){
+//                根据当前用户id找到其下关注用户的所有微博
+                foreach ($my_follow as $key=>$val){
+                    $list[] = D('member')
+                        ->where(array('uid'=>$val["follow_who"]))
+                        ->find();
+                }
+            }else{
+                $list = null;
+            }
+            successReturn($list);exit;
+        }
+    }
+
+    /**
+     * 获取用户基础资料
+     */
+    public function get_user_info(){
+//        define ('__WEBSITE__', 'https://ssl.xinjmc.com/hpsc/');
+        if (checkGet()){
+            $uid = I('get.user_id',1,'intval');
+//            $user = query_user(array('uid','nickname', 'signature', 'sex'), $uid);
+            $member = D('member')
+                ->alias('m')
+                ->join('left join ot_avatar a ON m.uid=a.uid')
+                ->join('left join ot_background b ON m.uid=b.uid')
+                ->field('m.uid,m.nickname,m.sex,m.signature,m.token,m.openid,m.reg_time,a.path,b.background_img')
+                ->where(['m.uid'=>$uid])
+                ->find();
+//            var_dump($member);exit;
+            $list = array(
+                'uid'=>$member['uid'],
+                'nickname'=>$member['nickname'],
+                'sex'=>$member['sex'],
+                'signature'=>$member['signature'],
+                'token'=>$member['token'],
+                'openid'=>$member['openid'],
+                'reg_time'=>date('Y-m-d',$member['reg_time']),
+                'avatar'=>$member['path'],
+                'background_img'=>$member['background_img'],
+            );
+//            var_dump($list);exit;
+            successReturn($list);
+        }
+    }
+
+    /**
+     * 更新用户基础资料
+     */
+    public function save_my_info(){
+        if (checkPost()) {
+            $uid = I('post.user_id',1,'intval');
+            $name = I('post.nickname', 1, 'string');
+            $bkg_img = I('post.bkg_img', 1, 'string');//背景图片
+            $sex = I('post.sex', 1, 'int');
+            $phone = I('post.phone','', 'string');
+            $captcha = I('post.captcha', 1, 'int');
+            $signature = I('post.signature', 1, 'string');
+
+            $member = D('member')
+                ->where(['uid'=>$uid])
+                ->find();
+            $member_name = cutstr_html($name);
+            if ($member_name !== $member['nickname']){
+                $this->checkNickname($member_name);
+            }
+            $message_code = S('message_code');
+            if ($message_code){
+                if ($captcha != $message_code){
+                    errorReturn('验证码错误');
+                }
+            }else{
+                errorReturn('验证码已过期,请重新发送验证码');
+            }
+//            var_dump($member);exit;
+//            $message_code = session('message_code');
+//            if ($message_code == $captcha){
+//            var_dump($phone);exit;
+            $user['nickname'] = $member_name;
+            $user['sex'] = $sex;
+            $user['phone'] = $phone;
+            $user['signature'] = $signature;
+            $rs_member = D('Member')
+                ->where(['uid'=>$uid])
+                ->save($user);
+            $bkg_exist = D('background')
+                ->where(['uid'=>$uid])
+                ->find();
+            if (!empty($bkg_img)){
+                if (!empty($bkg_exist)){
+                    $bkg['background_img'] = $bkg_img;
+                    $bkg['create_time'] = time();
+                    $bkg['status'] = 1;
+                    D('background')
+                        ->where(['uid'=>$uid])
+                        ->save($bkg);
+                }else{
+                    $bkg['uid'] = $uid;
+                    $bkg['background_img'] = $bkg_img;
+                    $bkg['create_time'] = time();
+                    $bkg['status'] = 1;
+                    D('background')
+                        ->add($bkg);
+                }
+            }
+            //TODO tox 清空缓存
+            S('weibo_at_who_users',null);
+            if ($rs_member) {
+                successReturn([],'设置成功');
+            } else {
+                errorReturn('未修改数据');
+            }
+        }
+    }
+
+
+    /**
+     * 获取短信验证码
+     */
+    public function get_message_code(){
+        if (checkGet()){
+            include('MessageController.class.php');
+//            $phone = I('get.phone');
+            $phone = '13888888888';
+            if (preg_match("/^(13[0-9]|14[5-9]|15[0-3|5-9]|166|17[1-8]|18[0-9]|19[89])\d{8}$/", $phone)){
+                $re = $this->check_message_time($phone);
+            }else{
+                errorReturn('请输入正确的11位手机号码');
+            }
+            if ($re['status'] == 1){
+//                $message_code=mt_rand(100000,999999);
+                $message_code='123456';
+                str_shuffle($message_code);
+//                session('message_code',$message_code);
+                $session = S('message_code',$message_code,array('type'=>'session','expire'=>3600));
+//                session(array('name'=>'message_code','value'=>$message_code,'expire'=>60));
+//                var_dump(S('message_code'));exit;
+                //            $redis->set('code_'.$phone,$message_code,60);
+                //检查发送次数
+                if ($session){
+                    $msg = "验证码为".$message_code;
+                    successReturn($msg,'短信发送成功');
+                }
+//                $message = new MessageController();
+//                $re = $message->send($msg,$phone);
+//                return $re;
+            }else{
+                successReturn($re['msg']);
+            }
+        }
+    }
+
+    /**
+     * 检查用户短信发送次数,防止短信被盗刷
+     */
+    public function check_message_time($phone){
+        $t = time();
+        $end_time = mktime(23,59,59,date("m",$t),date("d",$t),date("Y",$t)); //当天结束时间
+//        $end_time = '1537545601'; //当天结束时间
+        $check_time = D('message_limit')
+            ->field('num,end_time')
+            ->where(['phone'=>$phone])
+            ->find();
+        if (!empty($check_time)){
+            if ($end_time == $check_time['end_time']){
+                if (time()<=$check_time['end_time']){
+                    if ($check_time['num']>=10){
+                        return array('status'=>0,'msg'=>'每日发送短信已达上限!');
+                    }else{
+                        $map['num'] = $check_time['num']+1;
+                        $map['date'] = time();
+                        $time = D('message_limit')
+                            ->where(['phone'=>$phone])
+                            ->save($map);
+                        if ($time){
+                            return array('status'=>1,'msg'=>'短信已发送!');
+                        }else{
+                            return array('status'=>0,'msg'=>'短信发送失败!');
+                        }
+                    }
+                }else{
+                    $map['num'] = 1;
+                    $map['date'] = time();
+                    $map['end_time'] = $end_time;
+                    $time = D('message_limit')
+                        ->where(['phone'=>$phone])
+                        ->save($map);
+                    if ($time){
+                        return array('status'=>1,'msg'=>'短信已发送!');
+                    }else{
+                        return array('status'=>0,'msg'=>'短信发送失败!');
+                    }
+                }
+            }else{
+                $map['num'] = 1;
+                $map['date'] = time();
+                $map['end_time'] = $end_time;
+                $time = D('message_limit')
+                    ->where(['phone'=>$phone])
+                    ->save($map);
+                if ($time){
+                    return array('status'=>1,'msg'=>'短信已发送!');
+                }else{
+                    return array('status'=>0,'msg'=>'短信发送失败!');
+                }
+            }
+        }else{
+            $map['num'] = 1;
+            $map['date'] = time();
+            $map['phone'] = $phone;
+            $map['end_time'] = $end_time;
+            $time = D('message_limit')
+                ->add($map);
+            if ($time){
+                return array('status'=>1,'msg'=>'短信已发送!');
+            }else{
+                return array('status'=>0,'msg'=>'短信发送失败!');
+            }
+        }
+    }
+
+
+    /**
+     * 获取用户的作品
+     */
+    public function get_user_profiles(){
+        if (checkGet()){
+            $uid = I('get.user_id',1,'int');
+            $weiboModel = new WeiboModel();
+            $list = $weiboModel->getUserWeibo($uid);
+            successReturn($list);
+        }
+    }
+
+    /**
+     * 获取用户的动态
+     */
+    public function get_user_dynamic(){
+        if (checkGet()){
+            $uid = I('get.user_id',1,'intval');
+            $message = D('message')
+                ->field('content_id')
+                ->where(array('to_uid'=>$uid,'status'=>1))
+                ->select();
+            foreach ($message as $key=>$val) {
+                $message_content = D('message_content')
+//                        ->field('id,title,content,url,create_time')
+                    ->where(array('id' => $val['content_id'], 'status' => 1))
+                    ->select();
+                $list[] = $message_content;
+            }
+            successReturn($list);exit;
+        }
+    }
+
+    /**
+     * 用户认证页面
+    */
+    public function user_auth(){
+        if (checkGet()){
+            $attestModel=D('Ucenter/Attest');
+            $attestTypeModel=D('Ucenter/AttestType');
+            $attestType=$attestTypeModel->getTypeList();
+            $this->_checkAttestStatus();
+            $celebrity=$attestModel->getListLimit();
+            $attest['type'] = $attestType;
+            $attest['celebrity'] = $celebrity;
+            successReturn($attest);
+        }
+    }
+
+    /**
+     * 用户认证
+    */
+    public function individual()
+    {
+        $this->_checkAttestConditions();
+        $this->_checkAttestStatus();
+
+    }
+
+    public function apply()
+    {
+        $attest_old=$this->_checkAttestStatus(1);
+
+        $this->checkAuth('Ucenter/Attest/apply',-1,'你没有申请权限');
+        if(IS_POST){
+            $attest=$this->attestModel->create();
+            //检测认证资料 start
+            $res=$this->_checkAttestConditions($attest);
+            if(!$res){
+                $this->error('为满足认证申请条件！');
+            }
+            $attest_type=$this->_checkTypeExist($attest['attest_type_id']);
+            $attest_type['fields']['child_type_option']=explode(',',str_replace('，',',',$attest_type['fields']['child_type_option']));
+            $attest_type['fields']['image_type_option']=explode(',',str_replace('，',',',$attest_type['fields']['image_type_option']));
+            if(!in_array($attest['child_type'],$attest_type['fields']['child_type_option'])){
+                $this->error('非法操作！');
+            }
+            if($attest_type['fields']['company_name']!=0){
+                if($attest_type['fields']['company_name']==1&&strlen($attest['company_name'])==0){
+                    $this->error('企业、组织名称不能为空！');
+                }
+                if(strlen($attest['company_name'])<2||strlen($attest['company_name'])>100){
+                    $this->error('名称长度应该在2到100之间');
+                }
+            }
+            if($attest_type['fields']['name']!=0){
+                if($attest_type['fields']['name']==1&&strlen($attest['name'])==0){
+                    $this->error('真实姓名不能为空！');
+                }
+                if(preg_match('/^[\x4e00-\x9fa5]{2,8}$/',$attest['name'])===false){
+                    $this->error('请填写真实姓名');
+                }
+            }
+            if($attest_type['fields']['name']!=0){
+                if($attest_type['fields']['id_num']==1&&strlen($attest['id_num'])==0){
+                    $this->error('身份证号不能为空！');
+                }
+                if(preg_match('/^[1-9]\d{7}((0\d)|(1[0-2]))(([0|1|2]\d)|3[0-1])\d{3}$/',$attest['id_num'])===false&&preg_match('/^[1-9]\d{5}[1-9]\d{3}((0\d)|(1[0-2]))(([0|1|2]\d)|3[0-1])\d{3}([0-9]|X)$/',$attest['id_num'])===false){
+                    $this->error('请填写正确身份证号码');
+                }
+            }
+            if($attest_type['fields']['phone']!=0){
+                if($attest_type['fields']['phone']==1&&strlen($attest['phone'])==0){
+                    $this->error('联系方式不能为空！');
+                }
+                if(preg_match('/^(1[3|4|5|7|8])[0-9]{9}$/',$attest['phone'])===false&&preg_match('/^((0\d{2,3})-)(\d{7,8})(-(\d{3,}))?$/',$attest['phone'])===false){
+                    $this->error('请填写正确联系方式');
+                }
+            }
+            if(!in_array($attest['image_type'],$attest_type['fields']['image_type_option'])){
+                $this->error('非法操作！');
+            }
+            if($attest_type['fields']['prove_image']==1&&!count($attest['prove_image'])){
+                $this->error('请上传组织或企业证件的高清照片！');
+            }
+            if($attest_type['fields']['image']==1&&!count($attest['image'])){
+                $this->error('请上传证件正反面的高清照片！');
+            }
+            if($attest_type['fields']['other_image']==1&&!count($attest['other_image'])){
+                $this->error('请上传其他证明材料的高清照片！');
+            }
+            if($attest_type['fields']['info']!=0){
+                if($attest_type['fields']['info']==1&&strlen($attest['info'])==0){
+                    $this->error('认证补充不能为空！');
+                }
+            }
+            //检测认证资料 end
+
+            $attest['prove_image']&&$attest['prove_image']=implode(',',$attest['prove_image']);
+            $attest['image']&&$attest['image']=implode(',',$attest['image']);
+            $attest['other_image']&&$attest['other_image']=implode(',',$attest['other_image']);
+            $attest['uid']=is_login();
+            $attest['status']=2;
+            $res=$this->attestModel->editData($attest);
+            if($res!==false){
+                $uids=get_auth_user('Admin/Attest/setAuditStatus');
+                $user=query_user(array('nickname'));
+                send_message($uids,'用户申请认证','用户'.$user['nickname'].'申请'.$attest_type['title'].'，请速去审核',U('Admin/attest/attestlist',array('attest_type_id'=>$attest['attest_type_id'],'status'=>3),true,true),array('status'=>2),-1);
+                $this->success('申请成功，请等待审核！',U('Ucenter/Attest/process'));
+            }else{
+                $this->success('申请失败，请重试！');
+            }
+        }else{
+            $res=$this->_checkAttestConditions($attest_old);
+            if(!$res){
+                $this->error('未满足认证申请条件！');
+            }
+            if($attest_old){
+                $attestType=$this->_checkTypeExist($attest_old['attest_type_id']);
+            }else{
+                $aId=I('get.id',0,'intval');
+                $attestType=$this->_checkTypeExist($aId);
+            }
+            $attestType['fields']['child_type_option']=explode(',',str_replace('，',',',$attestType['fields']['child_type_option']));
+            $attestType['fields']['image_type_option']=explode(',',str_replace('，',',',$attestType['fields']['image_type_option']));
+            $this->assign('attest_type',$attestType);
+
+            $this->display();
+        }
+    }
+
+
+
+    private function get_weibo_list($params){
+        $model = new WeiboModel();
+        $lists = $model->getWeiboListByIndex($params);
+        return $lists;
+    }
+
+
+    /**
+     * checkIsLogin  判断是否登录
+     * @author:xjw129xjt(肖骏涛) xjt@ourstu.com
+     */
+    private function checkIsLogin()
+    {
+        if (!is_login()) {
+            $this->error(L('_ERROR_PLEASE_FIRST_LOGIN_'));
+        }
+    }
+
+    /**
+     * 解析搜索字符串
+    */
+    protected function parseSearchKey($key = null)
+    {
+        $action = MODULE_NAME . '_' . CONTROLLER_NAME . '_' . ACTION_NAME;
+        $post = I('post.');
+        if (empty($post)) {
+            $keywords = cookie($action);
+        } else {
+            $keywords = $post;
+            cookie($action, $post);
+            $_GET['page'] = 1;
+        }
+
+        if (!$_GET['page']) {
+            cookie($action, null);
+            $keywords = null;
+        }
+        return $key ? $keywords[$key] : $keywords;
+    }
+
+    /**
+     * assignSelf  输出当前登录用户信息
+     * @author:xjw129xjt(肖骏涛) xjt@ourstu.com
+     */
+    private function reSelf()
+    {
+        $self = query_user(array('title', 'avatar128', 'nickname', 'uid', 'space_url', 'score', 'title', 'fans', 'following', 'weibocount', 'rank_link'));
+        //获取用户封面id
+        $map = getUserConfigMap('user_cover');
+        $map['role_id'] = 0;
+        $model = D('Ucenter/UserConfig');
+        $cover = $model->findData($map);
+        $self['cover_id'] = $cover['value'];
+        $self['cover_path'] = getThumbImageById($cover['value'], 300, 180);
+        return $self;
+    }
+
+    /**验证用户名
+     * @param $nickname
+     * @auth 陈一枭
+     */
+    private function checkNickname($nickname)
+    {
+        $length = mb_strlen($nickname, 'utf8');
+        if ($length == 0) {
+            $this->error(L('_ERROR_NICKNAME_INPUT_').L('_PERIOD_'));
+        } else if ($length > modC('NICKNAME_MAX_LENGTH',32,'USERCONFIG')) {
+            $this->error(L('_ERROR_NICKNAME_1_'). modC('NICKNAME_MAX_LENGTH',32,'USERCONFIG').L('_ERROR_NICKNAME_2_').L('_PERIOD_'));
+        } else if ($length < modC('NICKNAME_MIN_LENGTH',2,'USERCONFIG')) {
+            $this->error(L('_ERROR_NICKNAME_LENGTH_1_').modC('NICKNAME_MIN_LENGTH',2,'USERCONFIG').L('_ERROR_NICKNAME_2_').L('_PERIOD_'));
+        }
+        $match = preg_match('/^(?!_|\s\')[A-Za-z0-9_\x80-\xff\s\']+$/', $nickname);
+        if (!$match) {
+            $this->error(L('_ERROR_NICKNAME_LIMIT_').L('_PERIOD_'));
+        }
+
+        $map_nickname['nickname'] = $nickname;
+        $map_nickname['uid'] = array('neq', is_login());
+        $had_nickname = D('Member')->where($map_nickname)->count();
+        if ($had_nickname) {
+            $this->error(L('_ERROR_NICKNAME_USED_').L('_PERIOD_'));
+        }
+        $denyName = M("Config")->where(array('name' => 'USER_NAME_BAOLIU'))->getField('value');
+        if ($denyName != '') {
+            $denyName = explode(',', $denyName);
+            foreach ($denyName as $val) {
+                if (!is_bool(strpos($nickname, $val))) {
+                    $this->error(L('_ERROR_NICKNAME_FORBIDDEN_').L('_PERIOD_'));
+                }
+            }
+        }
+    }
+
+    private function get_uid()
+    {
+        return is_login();
+    }
+
+
+    private function _checkAttestConditions($attest_old=null)
+    {
+        if($attest_old){
+            $attestType=$this->_checkTypeExist($attest_old['attest_type_id']);
+        }else{
+            $aId=I('get.id',0,'intval');
+            $attestType=$this->_checkTypeExist($aId);
+        }
+        $this->assign('attest_type',$attestType);
+
+        //检测申请条件 start
+        $can_apply=1;
+        if($attestType['conditions']['avatar']==1){
+            $avatar_user=query_user(array('avatar128'));
+            $this->assign('user_avatar',$avatar_user['avatar128']);
+
+            $map['uid']=is_login();
+            $map['status']=1;
+            $avatar=M('Avatar')->where($map)->find();
+            if($avatar){
+                $this->assign('avatar_ok',1);
+            }else{
+                $can_apply=0;
+            }
+        }
+        if($attestType['conditions']['phone']==1){
+            $mobile=query_user(array('mobile'));
+            if($mobile['mobile']!=''){
+                $this->assign('phone_ok',1);
+            }else{
+                $can_apply=0;
+            }
+        }
+        $followModel=D('Follow');
+        if($attestType['conditions']['follow']>0){
+            $map_follow['who_follow']=is_login();
+            $map_follow['follow_who']=array('neq','');
+            $follow_count=$followModel->where($map_follow)->count();
+            if($follow_count>$attestType['conditions']['follow']){
+                $this->assign('follow_ok',1);
+            }else{
+                $can_apply=0;
+            }
+        }
+        if($attestType['conditions']['fans']>0){
+            $map_fans['follow_who']=is_login();
+            $map_fans['who_follow']=array('neq','');
+            $fans_count=$followModel->where($map_fans)->count();
+            if($fans_count>$attestType['conditions']['fans']){
+                $this->assign('fans_ok',1);
+            }else{
+                $can_apply=0;
+            }
+        }
+        if($attestType['conditions']['friends']>0){
+            $friendUids=$followModel->getMyFriends();
+            $map_friend['uid']=array('in',$friendUids);
+            $map_friend['status']=1;
+            $friends_count=$this->attestModel->where($map_friend)->count();
+            if($friends_count>$attestType['conditions']['fans']){
+                $this->assign('friends_ok',1);
+            }else{
+                $can_apply=0;
+            }
+        }
+        $this->assign('can_apply',$can_apply);
+        //检测申请条件 end
+        return $can_apply;
+    }
+
+    private function _checkAttestStatus($redirect=0)
+    {
+        $attestModel=D('Ucenter/Attest');
+        $attestTypeModel=D('Ucenter/AttestType');
+        $map['uid']=is_login();
+        $map['status']=array('in','1,2,0');
+        $attest=$attestModel->getData($map);
+        if(!$attest){
+            return false;
+        }
+        $attest['prove_image']=explode(',',$attest['prove_image']);
+        $attest['image']=explode(',',$attest['image']);
+        $attest['other_image']=explode(',',$attest['other_image']);
+        $attest['type']=$attestTypeModel->getData($attest['attest_type_id'],1);
+        if($attest['status']==1){
+            if($redirect){
+                redirect(U('Ucenter/Attest/process'));
+            }
+        }
+        if($attest['status']==2||$attest['status']==0){
+            $aChange=I('change',0,'intval');
+            if(!$aChange){
+                if($redirect){
+                    redirect(U('Ucenter/Attest/process'));
+                }
+            }else{
+                $this->assign('change',1);
+            }
+        }
+        $this->assign('attest',$attest);
+        return $attest;
+    }
+
+    private function _checkTypeExist($id)
+    {
+        $attestTypeModel=D('Ucenter/AttestType');
+        $data=$attestTypeModel->getData($id,1);
+        if(!$data){
+            $this->error('该认证类型不存在！');
+        }
+        return $data;
+    }
+}

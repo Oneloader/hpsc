@@ -1,0 +1,78 @@
+<?php
+/**
+ * Created by PhpStorm.
+ * User: Yixiao Chen
+ * Date: 2015/5/5 0005
+ * Time: 上午 9:47
+ */
+
+namespace Wiki\Controller;
+
+use OSS\Http\RequestCore;
+use Think\Controller;
+use Think\Db;
+
+class BaseController extends  Controller{
+
+    protected $user_id;
+
+    protected $auth_key = 'session_von';
+
+    /**
+     * @var array 不处理的方法
+     */
+    private $ignore_action = [
+        'api/banner',
+    ];
+
+    /**
+     * @var array 不处理token验证
+     */
+    protected $ignore_token = [
+        'home/home_filter',
+    ];
+
+
+    /**
+     * BaseController constructor.
+     * @param null $request
+     */
+    public function __construct($request = null){
+        parent::__construct($request);
+        $controller = CONTROLLER_NAME;
+        $action = ACTION_NAME;
+        $url = $controller . '/' . $action;
+        $url = strtolower($url);
+        if (in_array($url,$this->ignore_action)){
+            return;
+        }else{
+            $timestamp = I('post.timestamp');
+            if (!$timestamp){
+                errorReturn(403,'请求参数不完整');
+            }
+            if ($timestamp <= time()-1000600000 || $timestamp >= time()+1000600000){
+                errorReturn(403,'请求超时');
+            }
+            $auth_key = I('post.auth_key');
+            $compraer = md5($timestamp.$this->auth_key);
+            if ($auth_key != $compraer){
+                errorReturn(404,'非法请求');
+            }
+            if (in_array($url,$this->ignore_token)){
+                return;
+            }else{
+                $token = I('post.token');
+                $id = I('post.user_id');
+                $result = D('member')
+                    ->field('token')
+                    ->where('token',$token)
+                    ->where('id',$id)
+                    ->find();
+                $this->user_id = $id;
+                if ($result['token'] == null || $result['token'] != $token){
+                    errorReturn(500,'登录失败,请重新登录');
+                }
+            }
+        }
+    }
+}

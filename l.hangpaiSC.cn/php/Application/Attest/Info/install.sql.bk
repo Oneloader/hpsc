@@ -1,0 +1,11 @@
+INSERT INTO `ocenter_menu` (`title`, `pid`, `sort`, `url`, `hide`, `tip`, `group`, `is_dev`, `icon`) VALUES
+( '认证中心', 0, 0, 'Attest/attestList', 1, '', '', 0, 'home');
+
+set @tmp_id=0;
+select @tmp_id:= id from `ocenter_menu` where title = '认证中心';
+
+INSERT INTO `ocenter_menu` ( `title`, `pid`, `sort`, `url`, `hide`, `tip`, `group`, `is_dev`, `icon`) VALUES
+( '认证列表', @tmp_id, 0, 'Attest/attestList', 0, '', '认证管理', 0, '');
+
+INSERT INTO `ocenter_menu` ( `title`, `pid`, `sort`, `url`, `hide`, `tip`, `group`, `is_dev`, `icon`) VALUES
+( '认证类型列表', @tmp_id, 0, 'Attest/attestTypes', 0, '', '认证管理', 0, '');

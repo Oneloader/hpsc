@@ -1,0 +1,178 @@
+<?php
+/**
+ * 小程序接口文件
+ */
+namespace Wiki\Controller;
+use Common\Model\AdvModel;
+use Common\Model\NavModel;
+use Think\Controller;
+use Weibo\Model\WeiboModel;
+
+class ApiController extends BaseController
+{
+
+    /**
+     * 获取顶部nav
+     * @return array
+     */
+    public function get_top_nav(){
+        if(checkGet()){
+            $navModel = new NavModel();
+            $top_navs = $navModel->get_top_navs();
+
+            successReturn($top_navs);
+        }
+    }
+
+    /**
+     * 获取轮播图
+     */
+    public function get_banner(){
+        if(checkPost()){
+            $pos = I('pos',0,'intval');
+            if(!$pos){
+                successReturn([]);
+            }
+
+            //获取轮播图
+            $advModel = new AdvModel();
+            $advs = $advModel->getAdvListByPos($pos);
+            successReturn($advs);
+        }
+    }
+
+    /**
+     * 获取首页热门推荐
+     */
+    public function get_index_hot_weibo(){
+        if(checkGet()){
+            $params = [
+                'where' => ['status'=>1],
+                'limit' => 3,
+                'order' => ['is_top'=>'desc','sort'=>'desc','comment_count'=>'desc'],   //热门
+            ];
+            $list = $this->get_weibo_list($params);
+            dump($list);
+        }
+    }
+
+    /**
+     * 获取最新微博列表
+     */
+    public function get_newest_weibo(){
+        if(checkPost()){
+            $page = I('p',1,'intval'); //分页
+            $params = [
+                'where' => ['status'=>1],
+                'order' => ['id'=>'desc'],   //最新
+                'page' => $page,
+            ];
+            $list = $this->get_weibo_list($params);
+            dump($list);
+        }
+    }
+
+    /**
+     * 获取微博详情
+     */
+    public function get_weibo_info(){
+        if(checkGet()){
+            $id = I('get.id',0,'intval');
+            $model = new WeiboModel();
+            $info = $model->getWeiboDetail($id);
+            dump($info);die;
+        }
+    }
+
+    /**
+     * 获取微博评论列表
+     */
+    public function get_weibo_comments(){
+
+    }
+
+    /**
+     * 评论
+     */
+    public function do_comments(){
+
+    }
+
+    /**
+     * 获取关注列表
+     */
+    public function get_favs(){
+
+    }
+
+    /**
+     * 获取分类标签
+     */
+    public function get_cat_tags(){
+
+    }
+
+    /**
+     * 发表微博
+     */
+    public function save_weibo(){
+
+    }
+
+    /**
+     * 搜索微博及用户
+     */
+    public function search(){
+
+    }
+
+    /**
+     * 获取通知
+     */
+    public function notices(){
+
+    }
+
+    /**
+     * 个人中心
+     */
+    public function user_center(){
+
+    }
+
+    /**
+     * 获取用户基础资料
+     */
+    public function get_user_info(){
+
+    }
+
+    /**
+     * 更新用户基础资料
+     */
+    public function save_my_info(){
+
+    }
+
+    /**
+     * 获取用户的作品
+     */
+    public function get_user_profiles(){
+
+    }
+
+    /**
+     * 获取用户的动态
+     */
+    public function get_user_(){
+
+    }
+
+
+
+    private function get_weibo_list($params){
+        $model = new WeiboModel();
+        $lists = $model->getWeiboListByIndex($params);
+        return $lists;
+    }
+}

@@ -1,0 +1,82 @@
+<?php
+/**
+ * Created by PhpStorm.
+ * User: Yixiao Chen
+ * Date: 2015/5/5 0005
+ * Time: 上午 9:47
+ */
+
+namespace Wiki\Controller;
+
+use Think\Controller;
+
+class BaseController extends  Controller{
+
+    protected $user_id;
+
+    protected $auth_key = 'xinmjc';
+
+    /**
+     * @var array 不处理的方法
+     */
+    private $ignore_action = [
+        'api/get_top_nav',
+        'api/get_banner',
+        'api/get_index_hot_weibo',
+        'api/get_cat_tags',
+        'api/search',
+    ];
+
+    /**
+     * @var array 不处理token验证
+     */
+    protected $ignore_token = [
+        'api/get_newest_weibo',
+        'api/get_weibo_info',
+        'api/get_weibo_comments',
+        'api/user_auth',
+    ];
+
+
+    /**
+     * BaseController constructor.
+     * @param null $request
+     */
+    public function __construct($request = null){
+        parent::__construct($request);
+        $controller = CONTROLLER_NAME;
+        $action = ACTION_NAME;
+        $url = $controller . '/' . $action;
+        $url = strtolower($url);
+        if (in_array($url,$this->ignore_action)){
+            return;
+        }else{
+            $timestamp = I('param.timestamp');
+            if (!$timestamp){
+                errorReturn('请求参数不完整');
+            }
+            if ($timestamp <= time()-1000600000 || $timestamp >= time()+1000600000){
+                errorReturn('请求超时');
+            }
+            $auth_key = I('param.auth_key');
+            $compraer = md5($timestamp.$this->auth_key);
+            if ($auth_key != $compraer){
+                errorReturn('非法请求');
+            }
+            if (in_array($url,$this->ignore_token)){
+                return;
+            }else{
+                $token = I('param.token');
+                $id = I('param.user_id');
+                $result = D('member')
+                    ->field('token')
+                    ->where(['token'=>$token,'id'=>$id])
+                    ->find();
+                $this->user_id = $id;
+                if ($result['token'] == null || $result['token'] != $token){
+                    errorReturn('登录失败,请重新登录');
+                }
+            }
+        }
+    }
+}

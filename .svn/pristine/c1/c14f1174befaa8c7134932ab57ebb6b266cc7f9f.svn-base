@@ -1,0 +1,207 @@
+<?php
+/**
+ * Created by PhpStorm.
+ * User: Yixiao Chen
+ * Date: 2015/5/5 0005
+ * Time: 上午 9:47
+ */
+
+namespace Wiki\Controller;
+
+use Think\Controller;
+
+class BaseController extends  Controller{
+
+//    protected $user_id;
+//
+//    protected $auth_key = 'xinmjc';
+//
+//    /**
+//     * @var array 不处理的方法
+//     */
+//    private $ignore_action = [
+//        'api/get_top_nav',
+//        'api/get_banner',
+//        'api/get_index_hot_weibo',
+//        'api/get_cat_tags',
+//        'api/search',
+//        'api/get_newest_weibo',
+//    ];
+//
+//    /**
+//     * @var array 不处理token验证
+//     */
+//    protected $ignore_token = [
+//        'api/get_weibo_info',
+//        'api/get_weibo_comments',
+//        'api/user_auth',
+//    ];
+//
+//
+//    /**
+//     * BaseController constructor.
+//     * @param null $request
+//     */
+//    public function __construct($request = null){
+//        parent::__construct($request);
+//        $controller = CONTROLLER_NAME;
+//        $action = ACTION_NAME;
+//        $url = $controller . '/' . $action;
+//        $url = strtolower($url);
+//        if (in_array($url,$this->ignore_action)){
+//            return;
+//        }else{
+//            $timestamp = I('param.timestamp');
+//            if (!$timestamp){
+//                errorReturn('请求参数不完整');
+//            }
+//            if ($timestamp <= time()-1000600000 || $timestamp >= time()+1000600000){
+//                errorReturn('请求超时');
+//            }
+//            $auth_key = I('param.auth_key');
+//            $compraer = md5($timestamp.$this->auth_key);
+//            if ($auth_key != $compraer){
+//                errorReturn('非法请求');
+//            }
+//            if (in_array($url,$this->ignore_token)){
+//                return;
+//            }else{
+//                $token = I('param.token');
+//                $id = I('param.user_id');
+//                $result = D('member')
+//                    ->field('token')
+//                    ->where(['token'=>$token,'id'=>$id])
+//                    ->find();
+//                $this->user_id = $id;
+//                if ($result['token'] == null || $result['token'] != $token){
+//                    errorReturn('登录失败,请重新登录');
+//                }
+//            }
+//        }
+//    }
+
+    /*
+ * 初始化操作
+ */
+//    public function _initialize(){
+//        clean_xss($_GET);
+//        clean_xss($_POST);
+//        //header("Cache-control: private");  // history.back返回后输入框值丢失问题
+//        //权限检查
+//        if(!in_array(ACTION_NAME,['login','salesLogout'])){
+//            //SA登录
+//            $identity = $this->checkIdentity();
+//            if(!empty($identity) && is_array($identity)){
+//                $this->sid = $identity['sid'];
+//                $this->ssid = $identity['ssid'];
+//                $this->sa_id = $identity['sa_id'];
+//                $this->sa_ticket = $identity['ticket'];
+//                $this->sales_name = $identity['username'];
+//                $this->mallId = $identity['mall_id'];
+//                $this->unionid = $identity['unionid'];
+//                $this->sales_id = $identity['id'];
+//                $this->url = $identity['url'];
+//            }else{
+//                ajaxReturn(['status'=>99,'msg'=>'您的身份验证已过期，请重新登录验证。']);
+//                //errorReturn('身份验证失败,请重新登录');
+//            }
+//
+//            if(!in_array(ACTION_NAME,['getSalesInfo','getAds','getBrandInfo','getGoodsInfo','getWeixinCardErcode',
+//                'search','getSalesErcode','getBrands','getHotBrands','getWeixinCards','getRecentCustomer','getAllCustomer',
+//                'getFansDegree','getSales','getSellList','pointsHelper','customerLogout','salesLogout','getBlackCards',
+//                'getApplyInfo','saveApplyData','customerLogin'])){
+//                //顾客登录
+//                $this->getCustomerCache();
+//                if(!empty($this->customer) && is_array($this->customer)){
+//                    $this->customer_id = $this->customer['id'];
+//                    $this->customer_openid = $this->customer['openid'];
+//                    $this->customer_unionId = $this->customer['union_id'];
+//                }
+//            }
+//        }
+//    }
+//
+//    /**
+//     * 核查导购员身份
+//     * @return array|bool|false|\PDOStatement|string|\think\Model
+//     */
+//    protected function checkIdentity(){
+//        $auth = session('userdata');
+//        if(empty($auth)){
+//            return false;
+//        }
+//        $sale_info_str = ucAuthCode($auth);
+//        $sale_info = json_decode($sale_info_str,true);
+//        if(count($sale_info) !== 4 ){
+//            session('sadata',null);
+//            return false;
+//        }
+//        $salesModel = new Sales();
+//        $sales_id = intval($sale_info[1]);
+//        if($sales_id == 0){
+//            session('sadata',null);
+//            return false;
+//        }
+//        $saleInfo = $salesModel->getSaleInfoById($sales_id);
+//        if(empty($saleInfo)){
+//            session('sadata',null);
+//            return false;
+//        }
+//        if($saleInfo['status'] == 0){
+//            session('sadata',null);
+//            return false;
+//        }
+//        unset($auth,$sale_info_str,$salesModel,$sales_id);
+//        if($saleInfo['sa_id'] ==  $sale_info[2] && $saleInfo['openid'] == $sale_info[3] && $saleInfo['sid'] == $sale_info[0]){
+//            return $saleInfo;
+//        }
+//        session('sadata',null);
+//        return false;
+//    }
+//
+//    /**
+//     * 获取顾客缓存数据
+//     * @return bool|mixed
+//     */
+//    public function getCustomerCache(){
+//        $auth = cookie('customerdata');
+//        //file_put_contents(RUNTIME_PATH . 'getSaInfo33_'.time().'.php', $auth);
+//        if(empty($auth)){
+//            return false;
+//        }
+//        $customer_info_str = ucAuthCode($auth);
+//        $customer_info = json_decode($customer_info_str,true);
+//        //file_put_contents(RUNTIME_PATH . 'getSaInfo44.php', var_export($customer_info, true));
+//        if(empty($customer_info)){
+//            return false;
+//        }
+//        if(empty($customer_info[0]) && empty($customer_info[1])){
+//            //session('customerdata',null);
+//            return false;
+//        }else{
+//            $this->customer_openid = $customer_info[0];
+//            $this->customer_unionId = $customer_info[1];
+//            //获取customer信息
+//            $customerInfo = $this->getCustomerFromMall();
+//            //file_put_contents(RUNTIME_PATH . 'getSaInfo55.php', var_export($customerInfo, true));
+//            if(empty($customerInfo)){
+//                return false;
+//            }
+//            //获取当前服务客人是否已被其他人SA服务
+//            $date = Db::name('customer_come_log')
+//                ->field('stime,etime')
+//                ->where(['customer'=>$customerInfo['id'],'sales_id'=>$this->sales_id,'sid'=>$this->sid])
+//                ->order('id desc')
+//                ->find();
+//            if($date['etime'] > $date['stime']){
+//                $this->customer_openid = null;
+//                $this->customer_unionId = null;
+//                cookie('customerdata',null);
+//                //服务已结束
+//                return false;
+//            }
+//            $this->customer = $customerInfo;
+//            return true;
+//        }
+//    }
+}

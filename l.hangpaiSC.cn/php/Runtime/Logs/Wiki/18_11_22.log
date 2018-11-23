@@ -1,0 +1,62 @@
+[ 2018-11-22T14:53:38+08:00 ] 127.0.0.1 /index.php?s=/wiki/api/get_all_hot_weibo.html&cate_id=10002
+INFO: [ app_init ] --START--
+INFO: Run Behavior\BuildLiteBehavior [ RunTime:0.000000s ]
+INFO: Run Common\Behavior\InitHookBehavior [ RunTime:0.002000s ]
+INFO: [ app_init ] --END-- [ RunTime:0.002000s ]
+NOTIC: [8] Undefined index: router D:\project\wechatApp\l.hangpaiSC.cn\php\Application\Common\Common\function.php 第 1988 行.
+NOTIC: [8] Undefined index: router D:\project\wechatApp\l.hangpaiSC.cn\php\Application\Common\Common\function.php 第 1988 行.
+NOTIC: [8] Undefined index: router D:\project\wechatApp\l.hangpaiSC.cn\php\Application\Common\Common\function.php 第 1988 行.
+NOTIC: [8] Undefined index: router D:\project\wechatApp\l.hangpaiSC.cn\php\Application\Common\Common\function.php 第 1988 行.
+NOTIC: [8] Undefined index: router D:\project\wechatApp\l.hangpaiSC.cn\php\Application\Common\Common\function.php 第 1988 行.
+SQL: SHOW COLUMNS FROM `ot_config` [ RunTime:0.023000s ]
+SQL: SELECT `type`,`name`,`value` FROM `ot_config` WHERE `status` = 1  [ RunTime:0.000000s ]
+INFO: [ app_begin ] --START--
+INFO: Run Behavior\ReadHtmlCacheBehavior [ RunTime:0.000000s ]
+INFO: Run Behavior\CheckLangBehavior [ RunTime:0.011000s ]
+INFO: [ app_begin ] --END-- [ RunTime:0.011000s ]
+NOTIC: [8192] mysql_connect(): The mysql extension is deprecated and will be removed in the future: use mysqli or PDO instead D:\project\wechatApp\l.hangpaiSC.cn\php\ThinkPHP\Library\Think\Session\Driver\Db.class.php 第 95 行.
+SQL: SHOW COLUMNS FROM `ot_module` [ RunTime:0.014000s ]
+SQL: SELECT `type`,`name`,`value` FROM `ot_config` WHERE `status` = 1  [ RunTime:0.000000s ]
+SQL: SELECT * FROM `ot_module` WHERE `name` = 'Wiki' LIMIT 1   [ RunTime:0.001000s ]
+INFO: [ action_begin ] --START--
+INFO: Run Common\Behavior\InitModuleInfoBehavior [ RunTime:0.001000s ]
+INFO: [ action_begin ] --END-- [ RunTime:0.001000s ]
+SQL: SHOW COLUMNS FROM `ot_weibo` [ RunTime:0.040000s ]
+SQL: SELECT id,uid,title,content,category,create_time,type,images FROM `ot_weibo` WHERE `status` = 1 AND ( FIND_IN_SET(10002,is_top) ) ORDER BY create_time desc LIMIT 0,5   [ RunTime:0.007000s ]
+SQL: SHOW COLUMNS FROM `ot_weibo` [ RunTime:0.009000s ]
+SQL: SHOW COLUMNS FROM `ot_member` [ RunTime:0.009000s ]
+SQL: SELECT `uid`,`nickname`,`signature` FROM `ot_member` WHERE `uid` = 1 LIMIT 1   [ RunTime:0.001000s ]
+SQL: SHOW COLUMNS FROM `ot_avatar` [ RunTime:0.026000s ]
+SQL: SELECT `path` FROM `ot_avatar` WHERE `uid` = 1 LIMIT 1   [ RunTime:0.001000s ]
+SQL: SHOW COLUMNS FROM `ot_weibo_topic` [ RunTime:0.022000s ]
+SQL: SELECT `id`,`name` FROM `ot_weibo_topic` WHERE `id` = 1 LIMIT 1   [ RunTime:0.005000s ]
+SQL: SELECT `id`,`name` FROM `ot_weibo_topic` WHERE `id` = 2 LIMIT 1   [ RunTime:0.001000s ]
+SQL: SHOW COLUMNS FROM `ot_picture` [ RunTime:0.008000s ]
+SQL: SELECT `url`,`path` FROM `ot_picture` WHERE `id` = 0 LIMIT 1   [ RunTime:0.000000s ]
+SQL: SELECT COUNT(*) AS tp_count FROM `ot_weibo` WHERE `status` = 1 AND ( FIND_IN_SET(10002,is_top) ) LIMIT 1   [ RunTime:0.000000s ]
+SQL: SELECT `uid`,`nickname`,`signature` FROM `ot_member` WHERE `uid` = 1 LIMIT 1   [ RunTime:0.001000s ]
+SQL: SELECT `path` FROM `ot_avatar` WHERE `uid` = 1 LIMIT 1   [ RunTime:0.000000s ]
+SQL: SELECT `id`,`name` FROM `ot_weibo_topic` WHERE `id` = 8 LIMIT 1   [ RunTime:0.000000s ]
+SQL: SELECT `id`,`name` FROM `ot_weibo_topic` WHERE `id` = 9 LIMIT 1   [ RunTime:0.000000s ]
+SQL: SELECT `id`,`name` FROM `ot_weibo_topic` WHERE `id` = 14 LIMIT 1   [ RunTime:0.000000s ]
+SQL: SELECT `url`,`path` FROM `ot_picture` WHERE `id` = 8 LIMIT 1   [ RunTime:0.008000s ]
+NOTIC: [2] strpos() expects parameter 1 to be string, array given D:\project\wechatApp\l.hangpaiSC.cn\php\Application\Wiki\Controller\ApiController.class.php 第 410 行.
+SQL: SELECT COUNT(*) AS tp_count FROM `ot_weibo` WHERE `status` = 1 AND ( FIND_IN_SET(10002,is_top) ) LIMIT 1   [ RunTime:0.000000s ]
+SQL: SELECT `uid`,`nickname`,`signature` FROM `ot_member` WHERE `uid` = 1 LIMIT 1   [ RunTime:0.000000s ]
+SQL: SELECT `path` FROM `ot_avatar` WHERE `uid` = 1 LIMIT 1   [ RunTime:0.000000s ]
+SQL: SELECT `id`,`name` FROM `ot_weibo_topic` WHERE `id` = 4 LIMIT 1   [ RunTime:0.000000s ]
+SQL: SELECT `id`,`name` FROM `ot_weibo_topic` WHERE `id` = 8 LIMIT 1   [ RunTime:0.001000s ]
+SQL: SELECT `url`,`path` FROM `ot_picture` WHERE `id` = 10 LIMIT 1   [ RunTime:0.000000s ]
+SQL: SELECT COUNT(*) AS tp_count FROM `ot_weibo` WHERE `status` = 1 AND ( FIND_IN_SET(10002,is_top) ) LIMIT 1   [ RunTime:0.000000s ]
+SQL: SELECT `uid`,`nickname`,`signature` FROM `ot_member` WHERE `uid` = 1 LIMIT 1   [ RunTime:0.001000s ]
+SQL: SELECT `path` FROM `ot_avatar` WHERE `uid` = 1 LIMIT 1   [ RunTime:0.000000s ]
+SQL: SELECT `id`,`name` FROM `ot_weibo_topic` WHERE `id` = 0 LIMIT 1   [ RunTime:0.000000s ]
+SQL: SELECT `url`,`path` FROM `ot_picture` WHERE `id` = 6 LIMIT 1   [ RunTime:0.001000s ]
+SQL: SELECT COUNT(*) AS tp_count FROM `ot_weibo` WHERE `status` = 1 AND ( FIND_IN_SET(10002,is_top) ) LIMIT 1   [ RunTime:0.000000s ]
+SQL: SELECT `uid`,`nickname`,`signature` FROM `ot_member` WHERE `uid` = 1 LIMIT 1   [ RunTime:0.000000s ]
+SQL: SELECT `path` FROM `ot_avatar` WHERE `uid` = 1 LIMIT 1   [ RunTime:0.001000s ]
+SQL: SELECT `id`,`name` FROM `ot_weibo_topic` WHERE `id` = 0 LIMIT 1   [ RunTime:0.000000s ]
+SQL: SELECT `url`,`path` FROM `ot_picture` WHERE `id` = 8 LIMIT 1   [ RunTime:0.000000s ]
+NOTIC: [2] strpos() expects parameter 1 to be string, array given D:\project\wechatApp\l.hangpaiSC.cn\php\Application\Wiki\Controller\ApiController.class.php 第 410 行.
+SQL: SELECT COUNT(*) AS tp_count FROM `ot_weibo` WHERE `status` = 1 AND ( FIND_IN_SET(10002,is_top) ) LIMIT 1   [ RunTime:0.001000s ]
+

@@ -1,0 +1,27 @@
+<?php
+
+namespace Wiki\Model;
+
+use Think\Model;
+
+class NavModel extends Model
+{
+    protected $tableName = 'menu';
+
+    /**
+     * 前端顶部nav
+     * @return array
+     */
+    public function get_top_navs(){
+        return [
+            ['id'=>1,'name'=>'作品','pos'=>10002],
+            ['id'=>2,'name'=>'行业','pos'=>10003],
+            ['id'=>3,'name'=>'机构','pos'=>10004],
+            ['id'=>4,'name'=>'飞手','pos'=>10005],
+        ];
+    }
+
+    public function get_left_navs(){
+
+    }
+}

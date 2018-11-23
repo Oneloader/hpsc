@@ -1,0 +1,499 @@
+<?php
+/**
+ * 小程序接口文件
+ */
+namespace Wiki\Controller;
+use Admin\Builder\AdminListBuilder;
+use Admin\Model\DocumentModel;
+use Common\Model\AdvModel;
+use Common\Model\NavModel;
+use Home\Controller\IndexController;
+use Think\Controller;
+use Ucenter\Controller\ConfigController;
+use Weibo\Model\TopicModel;
+use Weibo\Model\WeiboCommentModel;
+use Weibo\Model\WeiboModel;
+
+class ApiController extends BaseController
+{
+    /**
+     * 获取顶部nav
+     * @return array
+     */
+    public function get_top_nav(){
+        if(checkGet()){
+            $navModel = new \Wiki\Model\NavModel();
+            $top_navs = $navModel->get_top_navs();
+
+            successReturn($top_navs);
+        }
+    }
+
+    /**
+     * 获取轮播图
+     */
+    public function get_banner(){
+        if(checkPost()){
+            $pos = I('pos',0,'intval');
+            if(!$pos){
+                successReturn([]);
+            }
+
+            //获取轮播图
+            $advModel = new AdvModel();
+            $advs = $advModel->getAdvListByPos($pos);
+            successReturn($advs);
+        }
+    }
+
+    /**
+     * 获取首页热门推荐
+     */
+    public function get_index_hot_weibo(){
+        if(checkGet()){
+            $params = [
+                'where' => ['status'=>1],
+                'limit' => 3,
+                'order' => ['is_top'=>'desc','sort'=>'desc','comment_count'=>'desc'],   //热门
+            ];
+            $list = $this->get_weibo_list($params);
+            successReturn($list);
+        }
+    }
+
+    /**
+     * 获取最新微博列表
+     */
+    public function get_newest_weibo(){
+        if(checkPost()){
+            $page = I('p',1,'intval'); //分页
+            $params = [
+                'where' => ['status'=>1],
+                'order' => ['id'=>'desc'],   //最新
+                'page' => $page,
+            ];
+            $list = $this->get_weibo_list($params);
+            successReturn($list);
+        }
+    }
+
+    /**
+     * 获取微博详情
+     */
+    public function get_weibo_info(){
+        if(checkGet()){
+            $id = I('get.id',0,'intval');
+            $model = new WeiboModel();
+            $info = $model->getWeiboDetail($id);
+            successReturn($info);
+        }
+    }
+
+    /**
+     * 获取微博评论列表
+     */
+    public function get_weibo_comments(){
+        if(checkPost()){
+            $weibo_id = I('post.weibo_id',1,'intval');
+            $model = new WeiboCommentModel();
+            $list = $model->getCommentList($weibo_id);
+            successReturn($list);
+        }
+    }
+
+    /**
+     * 评论
+     */
+    public function do_comments(){
+        if (checkPost()){
+            $uid = I('post.uid',1,'intval');
+            $weibo_id = I('post.weibo_id',1,'intval');
+            $content = I('post.content',1,'string');
+            $commentModel = new WeiboCommentModel();
+            $re['comment_id'] = $commentModel->addComment($uid,$weibo_id,$content);
+            successReturn($re);
+        }
+    }
+
+    /**
+     * 获取粉丝列表
+     */
+    public function get_fans(){
+        if (checkGet()){
+            $uid = I('get.id',1,'intval');
+            $fans = D('Follow')->getFans($uid, $page, array('avatar128', 'uid', 'nickname', 'fans', 'following', 'weibocount', 'space_url', 'title', 'signature'), $totalCount);
+            successReturn($fans);
+        }
+    }
+
+    /**
+     * 获取分类标签
+     */
+    public function get_cat_tags(){
+        if (checkGet()){
+//            $topic = S('_WEIBO_USE_TOPIC');
+            $topic = modC('USE_TOPIC','','Weibo');
+            $topicList = explode(',',$topic);
+//            var_dump($top);exit;
+//            $topicModel = new TopicModel();
+//            $topicList = $topicModel->getTopicByMap();
+            if ($topicList){
+                successReturn($topicList);
+            }else{
+                errorReturn('暂时没有分类标签');
+            }
+        }
+    }
+
+    /**
+     * 发表微博
+     */
+    public function save_weibo(){
+        if (checkPost()){
+            $uid = I('post.uid',1,'intval');
+            $content = I('post.content',1,'string');
+            $weibo_model = new WeiboModel();
+            $re['weibo_id'] = $weibo_model->addWeibo($uid,$content);
+            successReturn($re);
+        }
+    }
+
+    /**
+     * 搜索微博及用户
+     */
+    public function search(){
+        if (checkPost()){
+            $aKeywords = $this->parseSearchKey('keywords');
+            $aKeywords = text($aKeywords);
+//            $aPage = I('get.page', 1, 'intval');
+            $r = 30;
+            $param['where']['content'] = array('like', "%{$aKeywords}%");
+            $param['where']['status'] = 1;
+            $param['order'] = 'create_time desc';
+//            $param['page'] = $aPage;
+            $param['count'] = $r;
+            //查询
+            $weiboModel = new WeiboModel();
+            $list = $weiboModel->getWeiboList($param);
+            $totalCount = $weiboModel->where($param['where'])->count();
+            successReturn($list);
+        }
+    }
+
+    /**
+     * 获取通知
+     */
+    public function notices(){
+        if (checkGet()){
+            $uid = I('get.id','','int');
+            $type = I('get.type','','int');
+//            $uid = 1;
+//            $message_sessions = get_all_message_session();
+//            foreach($message_sessions as &$val){
+//                if($val['block_tpl']){
+//                    $val['block_tpl']=APP_PATH.$val['module'].'/.../'.$val['block_tpl'].'.html';
+//                }else{
+//                    $val['block_tpl']=APP_PATH.'Common/.../_message_block.html';
+//                }
+//                if($val['default']){
+//                    $val['name']=$val['name'].'【默认】';
+//                }
+//            }
+//            unset($val);
+//            $builder=new AdminListBuilder();
+//            $builder->title('会话类型列表')
+//                ->suggest('这里只能查看和刷新，要对会话做增删改，请修改对应文件')
+//                ->ajaxButton(U('Message/sessionRefresh'),null,'刷新',array('hide-data' => 'true'))
+//                ->keyText('name','标识（发送消息时的$type参数值）')
+//                ->keyTitle()
+//                ->keyText('alias','所属模块')
+//                ->keyImage('logo','会话图标')
+//                ->keyText('sort','排序值')
+//                ->keyText('block_tpl','列表样式模板(“...”表示“View/default/MessageTpl/block”)')
+//                ->data($message_sessions)
+//                ->display();
+//            var_dump($message_sessions);exit;
+//            var_dump(is_login());exit;
+            /*-------$type 1为官方消息 2为互动消息---------*/
+            if ($type == "1"){
+                $message = D('message_content')->where(array('from_id'=>$uid,'status'=>1))->order('create_time desc')->select();
+                successReturn($message);
+            }elseif ($type == "2"){
+                $message = D('message')
+                    ->field('content_id')
+                    ->where(array('from_uid'=>$uid,'status'=>1))
+                    ->select();
+                foreach ($message as $key=>$val){
+                    $message_content = D('message_content')
+//                        ->field('id,title,content,url,create_time')
+                        ->where(array('id'=>$val['content_id'],'status'=>1))
+                        ->select();
+                    $msg[] = $message_content;
+                }
+                successReturn($msg);
+            }else{
+                return null;
+            }
+        }
+    }
+
+    /**
+     * 个人中心
+     */
+    public function user_center(){
+        if (checkGet()){
+            $uid = I('get.uid',1,'intval');
+            $params = [
+                'where' => ['uid'=>$uid,'status'=>1],
+                'order' => ['id'=>'desc'],   //最新
+                'page' => $page,
+            ];
+            $list['weibo'] = $this->get_weibo_list($params);
+            $list['weibo_count'] = count($list['weibo']);
+            $list['follow_count'] = D('follow')
+                    ->where(array('who_follow'=>$uid))
+                    ->count();
+//                $list['follow_count'] = count($follow);
+            $list['fans_count'] = D('follow')
+                    ->where(array('follow_who'=>$uid))
+                    ->count();
+//                $list['fans_count'] = count($fans);
+            $list['support_count'] = D('support')
+                    ->where(array('uid'=>$uid))
+                    ->count();
+            successReturn($list);exit;
+        }
+    }
+
+    /**
+     * 我的关注
+    */
+    public function user_follow(){
+        if (checkGet()){
+            $uid = I('get.uid',1,'intval');
+            $type = I('get.type',1,'string');
+            $my_follow = D('follow')
+                ->field('follow_who')
+                ->where(array('who_follow'=>$uid))
+                ->select();
+            if ($type == "weibo"){
+//                根据当前用户id找到其下关注用户的所有微博
+//                var_dump($my_follow);exit;
+                foreach ($my_follow as $key=>$val){
+                    $follow_who[] = $val["follow_who"];
+                }
+                $fol = implode(',', $follow_who);
+//                var_dump($fol);exit;
+//                $list[$key] = D('weibo')
+//                    ->where(array('uid'=>$fol))
+//                    ->order('create_time desc')
+//                    ->count();
+                $where['uid'] = array('in',$fol);
+                $list = D('weibo')
+                    ->where($where)
+                    ->order('create_time desc')
+                    ->select();
+            }elseif($type == "user"){
+//                根据当前用户id找到其下关注用户的所有微博
+                foreach ($my_follow as $key=>$val){
+                    $list[] = D('member')
+                        ->where(array('uid'=>$val["follow_who"]))
+                        ->find();
+                }
+            }else{
+                $list = null;
+            }
+            successReturn($list);exit;
+        }
+    }
+
+    /**
+     * 获取用户基础资料
+     */
+    public function get_user_info(){
+        if (checkGet()){
+            $uid = I('get.id',1,'intval');
+            //调用API获取基本信息
+            //TODO tox 获取省市区数据
+            $user = query_user(array('nickname', 'signature', 'email', 'mobile', 'rank_link', 'sex', 'pos_province', 'pos_city', 'pos_district', 'pos_community'), $uid);
+            if ($user['pos_province'] != 0) {
+                $user['pos_province'] = D('district')->where(array('id' => $user['pos_province']))->getField('name');
+                $user['pos_city'] = D('district')->where(array('id' => $user['pos_city']))->getField('name');
+                $user['pos_district'] = D('district')->where(array('id' => $user['pos_district']))->getField('name');
+                $user['pos_community'] = D('district')->where(array('id' => $user['pos_community']))->getField('name');
+            }
+            dump($user);
+        }
+    }
+
+    /**
+     * 更新用户基础资料
+     */
+    public function save_my_info(){
+        if (checkPost()) {
+            $name = I('post.name', 1, 'string');
+            $sex = I('post.sex', 1, 'int');
+            $phone = I('post.phone', 1, 'int');
+//            $captcha = I('post.captcha', 1, 'int');
+            $signature = I('post.signature', 1, 'string');
+            $this->checkNickname($name);
+
+            $user['nickname'] = $name;
+            $user['sex'] = $sex;
+            $user['phone'] = $phone;
+            $user['signature'] = $signature;
+            $user['uid'] = get_uid();
+
+            $rs_member = D('Member')->save($user);
+
+            $ucuser['id'] = $this->get_uid();
+            $rs_ucmember = D('User/UcenterMember')->save($ucuser);
+
+            clean_query_user_cache(get_uid(), array('nickname', 'sex', 'signature', 'email', 'pos_province', 'pos_city', 'pos_district', 'pos_community'));
+
+            //TODO tox 清空缓存
+
+            S('weibo_at_who_users',null);
+
+            if ($rs_member || $rs_ucmember) {
+                $this->success(L('_SUCCESS_SETTINGS_').L('_PERIOD_'));
+            } else {
+                $this->success(L('_DATA_UNMODIFIED_').L('_PERIOD_'));
+            }
+//            var_dump($name);
+        }
+    }
+
+    /**
+     * 获取用户的作品
+     */
+    public function get_user_profiles(){
+        if (checkGet()){
+            $uid = I('get.id',1,'int');
+            $weiboModel = new WeiboModel();
+            $list = $weiboModel->getUserWeibo($uid);
+            dump($list);
+        }
+    }
+
+    /**
+     * 获取用户的动态
+     */
+    public function get_user_dynamic(){
+        if (checkGet()){
+            $uid = I('get.uid',1,'intval');
+            $message = D('message')
+                ->field('content_id')
+                ->where(array('from_uid'=>$uid,'status'=>1))
+                ->select();
+            foreach ($message as $key=>$val) {
+                $message_content = D('message_content')
+//                        ->field('id,title,content,url,create_time')
+                    ->where(array('id' => $val['content_id'], 'status' => 1))
+                    ->select();
+                $list[] = $message_content;
+            }
+            successReturn($list);exit;
+        }
+    }
+
+
+
+    private function get_weibo_list($params){
+        $model = new WeiboModel();
+        $lists = $model->getWeiboListByIndex($params);
+        return $lists;
+    }
+
+
+    /**
+     * checkIsLogin  判断是否登录
+     * @author:xjw129xjt(肖骏涛) xjt@ourstu.com
+     */
+    private function checkIsLogin()
+    {
+        if (!is_login()) {
+            $this->error(L('_ERROR_PLEASE_FIRST_LOGIN_'));
+        }
+    }
+
+    /**
+     * 解析搜索字符串
+    */
+    protected function parseSearchKey($key = null)
+    {
+        $action = MODULE_NAME . '_' . CONTROLLER_NAME . '_' . ACTION_NAME;
+        $post = I('post.');
+        if (empty($post)) {
+            $keywords = cookie($action);
+        } else {
+            $keywords = $post;
+            cookie($action, $post);
+            $_GET['page'] = 1;
+        }
+
+        if (!$_GET['page']) {
+            cookie($action, null);
+            $keywords = null;
+        }
+        return $key ? $keywords[$key] : $keywords;
+    }
+
+    /**
+     * assignSelf  输出当前登录用户信息
+     * @author:xjw129xjt(肖骏涛) xjt@ourstu.com
+     */
+    private function reSelf()
+    {
+        $self = query_user(array('title', 'avatar128', 'nickname', 'uid', 'space_url', 'score', 'title', 'fans', 'following', 'weibocount', 'rank_link'));
+        //获取用户封面id
+        $map = getUserConfigMap('user_cover');
+        $map['role_id'] = 0;
+        $model = D('Ucenter/UserConfig');
+        $cover = $model->findData($map);
+        $self['cover_id'] = $cover['value'];
+        $self['cover_path'] = getThumbImageById($cover['value'], 300, 180);
+        return $self;
+    }
+
+    /**验证用户名
+     * @param $nickname
+     * @auth 陈一枭
+     */
+    private function checkNickname($nickname)
+    {
+        $length = mb_strlen($nickname, 'utf8');
+        if ($length == 0) {
+            $this->error(L('_ERROR_NICKNAME_INPUT_').L('_PERIOD_'));
+        } else if ($length > modC('NICKNAME_MAX_LENGTH',32,'USERCONFIG')) {
+            $this->error(L('_ERROR_NICKNAME_1_'). modC('NICKNAME_MAX_LENGTH',32,'USERCONFIG').L('_ERROR_NICKNAME_2_').L('_PERIOD_'));
+        } else if ($length < modC('NICKNAME_MIN_LENGTH',2,'USERCONFIG')) {
+            $this->error(L('_ERROR_NICKNAME_LENGTH_1_').modC('NICKNAME_MIN_LENGTH',2,'USERCONFIG').L('_ERROR_NICKNAME_2_').L('_PERIOD_'));
+        }
+        $match = preg_match('/^(?!_|\s\')[A-Za-z0-9_\x80-\xff\s\']+$/', $nickname);
+        if (!$match) {
+            $this->error(L('_ERROR_NICKNAME_LIMIT_').L('_PERIOD_'));
+        }
+
+        $map_nickname['nickname'] = $nickname;
+        $map_nickname['uid'] = array('neq', is_login());
+        $had_nickname = D('Member')->where($map_nickname)->count();
+        if ($had_nickname) {
+            $this->error(L('_ERROR_NICKNAME_USED_').L('_PERIOD_'));
+        }
+        $denyName = M("Config")->where(array('name' => 'USER_NAME_BAOLIU'))->getField('value');
+        if ($denyName != '') {
+            $denyName = explode(',', $denyName);
+            foreach ($denyName as $val) {
+                if (!is_bool(strpos($nickname, $val))) {
+                    $this->error(L('_ERROR_NICKNAME_FORBIDDEN_').L('_PERIOD_'));
+                }
+            }
+        }
+    }
+
+    private function get_uid()
+    {
+        return is_login();
+    }
+}
